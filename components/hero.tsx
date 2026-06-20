@@ -1,17 +1,10 @@
 "use client";
 
-import React, { Suspense } from "react";
+import React from "react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Sparkles, Heart, Gift, ArrowRight } from "lucide-react";
 import Link from "next/link";
-import dynamic from "next/dynamic";
-
-// Dynamically import 3D scene for performance
-const Hero3DScene = dynamic(() => import("./hero-3d-scene"), {
-  ssr: false,
-  loading: () => null,
-});
 
 const FloatingElement = ({
   children,
@@ -64,13 +57,6 @@ export function Hero() {
 
   return (
     <section className="relative min-h-screen flex items-center justify-center overflow-hidden bg-gradient-to-br from-[#FFF0F5] via-[#FFF9FB] to-[#F0E6FF]">
-      {/* 3D Background Scene */}
-      <div className="absolute inset-0 z-0">
-        <Suspense fallback={null}>
-          <Hero3DScene />
-        </Suspense>
-      </div>
-
       {/* Animated Background Shapes */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         {/* Large blob shapes */}
@@ -216,9 +202,12 @@ export function Hero() {
             <Button
               size="lg"
               className="bg-primary hover:bg-primary/90 text-primary-foreground px-8 py-6 text-lg rounded-full shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 group"
+              asChild
             >
-              Shop Collection
-              <ArrowRight className="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" />
+              <Link href="/products">
+                Shop Collection
+                <ArrowRight className="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" />
+              </Link>
             </Button>
             <Button
               variant="outline"

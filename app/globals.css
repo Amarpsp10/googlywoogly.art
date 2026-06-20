@@ -151,6 +151,64 @@
   body {
     @apply bg-background text-foreground;
   }
+
+  /* Accessible focus indicator (doc 16 FR-14): a >=2px, >=3:1-contrast ring on
+     keyboard-focused controls that don't already style their own focus. shadcn
+     primitives (they carry data-slot) keep their built-in focus-visible ring,
+     so this only enhances plain links, nav items, breadcrumbs and the skip link
+     that previously had no visible focus. Mouse clicks don't trigger
+     :focus-visible, so the resting look is unchanged. */
+  :where(a, button, summary, [tabindex]):not([data-slot]):focus-visible {
+    outline: 2px solid var(--accessible-ring);
+    outline-offset: 2px;
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--ring) 30%, transparent);
+    border-radius: var(--radius-sm);
+  }
+}
+
+/* Deep-rose focus colour: AA-compliant (>=3:1) replacement for the light-pink
+   --ring on white, per doc 16 §5.2. Scoped here so the brand --ring token is
+   untouched; tracks the foreground in dark mode for contrast on dark surfaces. */
+:root {
+  --accessible-ring: #d6336c;
+}
+.dark {
+  --accessible-ring: #ff8fab;
+}
+
+/* Screen-reader-only: visually hidden but available to assistive tech. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* Skip-to-content link (doc 16 FR-13): visually hidden until focused, then it
+   pins to the top-left as the first focusable element so keyboard users can
+   jump straight to #main-content. */
+.skip-link {
+  position: fixed;
+  top: 0.5rem;
+  left: 0.5rem;
+  z-index: 100;
+  transform: translateY(-150%);
+  border-radius: var(--radius-md);
+  background: var(--primary);
+  color: var(--primary-foreground);
+  padding: 0.625rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  box-shadow: var(--shadow, 0 4px 12px rgb(0 0 0 / 0.15));
+  transition: transform 150ms ease;
+}
+.skip-link:focus-visible {
+  transform: translateY(0);
 }
 
 /* Custom Animations */

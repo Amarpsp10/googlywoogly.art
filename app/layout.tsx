@@ -1,8 +1,10 @@
-import React from "react"
+import type { ReactNode } from "react";
 import type { Metadata, Viewport } from "next";
 import { Quicksand, Playfair_Display } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
+import { Toaster } from "sonner";
 import "./globals.css";
+import { publicEnv } from "@/lib/env";
 
 const quicksand = Quicksand({
   subsets: ["latin"],
@@ -17,70 +19,48 @@ const playfair = Playfair_Display({
 });
 
 export const metadata: Metadata = {
-  title: "GooglyWoogly Art | Handmade Gifts with Love by Vanshika Bhatia",
+  metadataBase: new URL(publicEnv.siteUrl),
+  title: {
+    default: "GooglyWoogly Art | Handmade Gifts & Décor from Jaipur",
+    template: "%s · GooglyWoogly Art",
+  },
   description:
-    "Discover unique handmade personalized gifts crafted with love. Custom artwork, personalized presents, and creative gift solutions for every occasion. Shop GooglyWoogly Art by Vanshika Bhatia.",
+    "Discover unique handmade personalized gifts and home décor, crafted with love in Jaipur by Vanshika Bhatia. Each piece is one of a kind.",
   keywords: [
     "handmade gifts",
     "personalized gifts",
-    "custom artwork",
-    "handcrafted presents",
-    "unique gifts",
-    "Vanshika Bhatia",
+    "home décor",
+    "Jaipur",
+    "handcrafted",
     "GooglyWoogly Art",
-    "creative gifts",
-    "artisan gifts",
-    "gift ideas",
   ],
-  authors: [{ name: "Vanshika Bhatia" }],
-  creator: "Vanshika Bhatia",
   openGraph: {
     type: "website",
     locale: "en_IN",
-    url: "https://googlywoogly.art",
     siteName: "GooglyWoogly Art",
-    title: "GooglyWoogly Art | Handmade Gifts with Love",
-    description:
-      "Discover unique handmade personalized gifts crafted with love by Vanshika Bhatia.",
-    images: [
-      {
-        url: "/og-image.jpg",
-        width: 1200,
-        height: 630,
-        alt: "GooglyWoogly Art - Handmade Gifts with Love",
-      },
-    ],
+    images: [{ url: "/og-image.jpg", width: 1200, height: 630, alt: "GooglyWoogly Art" }],
   },
-  twitter: {
-    card: "summary_large_image",
-    title: "GooglyWoogly Art | Handmade Gifts with Love",
-    description:
-      "Discover unique handmade personalized gifts crafted with love.",
-    images: ["/og-image.jpg"],
-  },
-  robots: {
-    index: true,
-    follow: true,
-  },
-    generator: 'v0.app'
+  twitter: { card: "summary_large_image", images: ["/og-image.jpg"] },
+  robots: { index: true, follow: true },
 };
 
 export const viewport: Viewport = {
   themeColor: "#FF8FAB",
   width: "device-width",
   initialScale: 1,
-  maximumScale: 5,
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+/**
+ * Root layout — minimal global shell only (html, fonts, toaster, analytics).
+ * The storefront chrome lives in `app/(shop)/layout.tsx`; the admin chrome in
+ * `app/admin/layout.tsx`. This keeps each surface's framing independent.
+ */
+export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   return (
     <html lang="en" className={`${quicksand.variable} ${playfair.variable}`}>
-      <body className="font-sans antialiased overflow-x-hidden">
+      <body className="overflow-x-hidden font-sans antialiased">
         {children}
+        <Toaster richColors position="top-center" />
         <Analytics />
       </body>
     </html>
