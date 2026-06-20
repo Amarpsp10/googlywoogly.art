@@ -1,0 +1,810 @@
+// GooglyWoogly Art — Prisma schema
+// Conforms to docs/00-canonical-decisions.md (CANON) + docs/03-data-model-and-entities.md.
+// Folds in CANON §16 additions (Redirect, Counter, PasswordResetToken, Order tracking/idempotency
+// fields, OrderItem made-to-order snapshots, AdminUser lockout fields, CmsPage.lastReviewedAt).
+//
+// Conventions:
+//  - Money is integer paise (₹1 = 100 paise). Never Float/Decimal.
+//  - Timestamps are Timestamptz(3) UTC; display converts to IST.
+//  - cuid() PKs; never exposed in storefront URLs (slugs/tokens only).
+//  - Tables snake_cased via @@map; columns kept camelCase (matches the CANON Prisma excerpt).
+//  - Product.inventoryState is NOT stored (derived at read time).
+//  - Free-shipping threshold lives in SiteSetting.shippingDefaults.freeShippingThresholdPaise (CANON §16 R-4).
+//  - Product.searchVector (tsvector + GIN) is added via a raw SQL migration in the search phase.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────────────────────── enums (CANON §6 + §3.3 supporting) ─────────────────────────────
+
+enum ProductStatus {
+  draft
+  active
+  archived
+}
+
+enum OrderStatus {
+  pending_confirmation
+  confirmed
+  in_production
+  ready_to_ship
+  shipped
+  delivered
+  cancelled
+  on_hold
+}
+
+enum PaymentStatus {
+  unpaid
+  awaiting_payment
+  paid
+  partially_paid
+  refunded
+}
+
+enum InquiryStatus {
+  new
+  contacted
+  quoted
+  won
+  lost
+  closed
+}
+
+enum ReviewStatus {
+  pending
+  approved
+  rejected
+}
+
+enum AdminRole {
+  owner
+  admin
+  staff
+}
+
+enum CollectionType {
+  manual
+  automated
+}
+
+enum NotificationChannel {
+  email
+  sms
+  whatsapp
+  system
+}
+
+enum NotificationStatus {
+  queued
+  sent
+  failed
+  skipped
+}
+
+enum AnalyticsEventType {
+  page_view
+  product_view
+  category_view
+  collection_view
+  search
+  filter_apply
+  add_to_cart
+  remove_from_cart
+  update_cart
+  begin_checkout
+  place_order
+  order_confirmed
+  whatsapp_click
+  bulk_inquiry_submit
+  contact_submit
+  newsletter_signup
+  outbound_click
+}
+
+enum CouponType {
+  percentage
+  fixed
+  free_shipping
+}
+
+enum BannerType {
+  marquee
+  hero
+  promo
+}
+
+enum MediaType {
+  image
+  video
+  document
+}
+
+enum ContactStatus {
+  new
+  read
+  replied
+  archived
+}
+
+enum OrderSource {
+  web_checkout
+  bulk_inquiry
+  admin_manual
+  whatsapp
+}
+
+enum SubscriberSource {
+  footer
+  checkout
+  popup
+  bulk_form
+  import
+}
+
+enum DeviceType {
+  mobile
+  tablet
+  desktop
+  bot
+}
+
+enum HomepageSectionType {
+  hero
+  featured_products
+  featured_collections
+  category_grid
+  bestsellers
+  testimonials
+  banner
+  story
+  instagram
+  newsletter
+  faq
+  rich_text
+}
+
+// ───────────────────────────── catalog ─────────────────────────────
+
+model Product {
+  id                     String              @id @default(cuid())
+  slug                   String              @unique
+  title                  String
+  subtitle               String?
+  description            String              @db.Text
+  shortDescription       String?
+  sku                    String              @unique
+  price                  Int // paise
+  compareAtPrice         Int?
+  costPrice              Int? // admin-only; never selected for storefront
+  status                 ProductStatus       @default(draft)
+  inventoryQuantity      Int                 @default(0)
+  madeToOrder            Boolean             @default(false)
+  productionLeadTimeDays Int?
+  lowStockThreshold      Int                 @default(3)
+  allowsPersonalization  Boolean             @default(false)
+  personalizationLabel   String?
+  materials              String?
+  careInstructions       String?             @db.Text
+  dimensions             Json?               @db.JsonB
+  weightGrams            Int?
+  categoryId             String?
+  category               Category?           @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  tags                   String[]            @default([])
+  occasions              String[]            @default([])
+  isFeatured             Boolean             @default(false)
+  isBestseller           Boolean             @default(false)
+  metaTitle              String?
+  metaDescription        String?
+  ogImageId              String?
+  ogImage                MediaAsset?         @relation("ProductOgImage", fields: [ogImageId], references: [id], onDelete: SetNull)
+  primaryImageId         String?
+  primaryImage           MediaAsset?         @relation("ProductPrimaryImage", fields: [primaryImageId], references: [id], onDelete: SetNull)
+  images                 ProductImage[]
+  collections            CollectionProduct[]
+  orderItems             OrderItem[]
+  reviews                Review[]
+  publishedAt            DateTime?           @db.Timestamptz(3)
+  createdAt              DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt              DateTime            @updatedAt @db.Timestamptz(3)
+
+  @@index([categoryId])
+  @@index([status])
+  @@index([isFeatured])
+  @@index([isBestseller])
+  @@index([publishedAt])
+  @@index([tags], type: Gin)
+  @@index([occasions], type: Gin)
+  @@map("products")
+}
+
+model ProductImage {
+  id           String      @id @default(cuid())
+  productId    String
+  product      Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  mediaAssetId String?
+  mediaAsset   MediaAsset? @relation(fields: [mediaAssetId], references: [id], onDelete: SetNull)
+  url          String
+  alt          String?
+  width        Int?
+  height       Int?
+  sortOrder    Int         @default(0)
+  isPrimary    Boolean     @default(false)
+
+  @@index([productId, sortOrder])
+  @@map("product_images")
+}
+
+model Category {
+  id              String      @id @default(cuid())
+  slug            String      @unique
+  name            String
+  description     String?     @db.Text
+  imageId         String?
+  image           MediaAsset? @relation(fields: [imageId], references: [id], onDelete: SetNull)
+  parentId        String?
+  parent          Category?   @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children        Category[]  @relation("CategoryTree")
+  products        Product[]
+  sortOrder       Int         @default(0)
+  isActive        Boolean     @default(true)
+  metaTitle       String?
+  metaDescription String?
+  createdAt       DateTime    @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime    @updatedAt @db.Timestamptz(3)
+
+  @@index([isActive])
+  @@index([parentId])
+  @@map("categories")
+}
+
+model Collection {
+  id               String              @id @default(cuid())
+  slug             String              @unique
+  title            String
+  description      String?             @db.Text
+  heroImageId      String?
+  heroImage        MediaAsset?         @relation(fields: [heroImageId], references: [id], onDelete: SetNull)
+  type             CollectionType      @default(manual)
+  rules            Json?               @db.JsonB
+  sortOrder        Int                 @default(0)
+  isActive         Boolean             @default(true)
+  isFeaturedOnHome Boolean             @default(false)
+  metaTitle        String?
+  metaDescription  String?
+  products         CollectionProduct[]
+  createdAt        DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime            @updatedAt @db.Timestamptz(3)
+
+  @@index([isActive])
+  @@index([isFeaturedOnHome])
+  @@map("collections")
+}
+
+model CollectionProduct {
+  collectionId String
+  collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  productId    String
+  product      Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  sortOrder    Int        @default(0)
+
+  @@id([collectionId, productId])
+  @@index([productId])
+  @@map("collection_products")
+}
+
+model MediaAsset {
+  id            String         @id @default(cuid())
+  url           String
+  alt           String?
+  type          MediaType      @default(image)
+  width         Int?
+  height        Int?
+  sizeBytes     Int?
+  folder        String?
+  publicId      String?        @unique
+  productImages ProductImage[]
+  primaryFor    Product[]      @relation("ProductPrimaryImage")
+  ogFor         Product[]      @relation("ProductOgImage")
+  categories    Category[]
+  collections   Collection[]
+  banners       Banner[]
+  testimonials  Testimonial[]
+  logoSettings  SiteSetting[]
+  createdAt     DateTime       @default(now()) @db.Timestamptz(3)
+
+  @@index([folder])
+  @@map("media_assets")
+}
+
+// ───────────────────────────── commerce ─────────────────────────────
+
+model Order {
+  id              String             @id @default(cuid())
+  orderNumber     String             @unique
+  trackingToken   String             @unique
+  clientRequestId String?            @unique // idempotent placement (CANON §16.3)
+  status          OrderStatus        @default(pending_confirmation)
+  paymentStatus   PaymentStatus      @default(unpaid)
+  customerId      String?
+  customer        Customer?          @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  customerName    String
+  customerPhone   String
+  customerEmail   String
+  shippingAddress Json               @db.JsonB
+  billingAddress  Json?              @db.JsonB
+  subtotal        Int // paise
+  shippingFee     Int                @default(0)
+  discountTotal   Int                @default(0)
+  taxTotal        Int                @default(0)
+  grandTotal      Int
+  amountPaid      Int                @default(0) // offline payments recorded by admin (CANON §16.3)
+  currency        String             @default("INR")
+  couponCode      String?
+  customerNote    String?            @db.Text
+  giftMessage     String?            @db.Text
+  source          OrderSource        @default(web_checkout)
+  courierName     String? // CANON §16.3
+  trackingNumber  String? // CANON §16.3
+  trackingUrl     String? // CANON §16.3
+  invoiceNumber   String?            @unique // CANON §16.3
+  internalNotes   String?            @db.Text // CANON §16.3
+  confirmedAt     DateTime?          @db.Timestamptz(3)
+  items           OrderItem[]
+  statusEvents    OrderStatusEvent[]
+  notifications   NotificationLog[]
+  reviews         Review[]
+  session         AnalyticsSession?
+  createdAt       DateTime           @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime           @updatedAt @db.Timestamptz(3)
+
+  @@index([status])
+  @@index([paymentStatus])
+  @@index([createdAt])
+  @@index([customerPhone])
+  @@index([customerEmail])
+  @@map("orders")
+}
+
+model OrderItem {
+  id                            String   @id @default(cuid())
+  orderId                       String
+  order                         Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId                     String?
+  product                       Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  productTitle                  String // snapshot
+  sku                           String // snapshot
+  imageUrl                      String? // snapshot
+  unitPrice                     Int // paise, snapshot
+  quantity                      Int
+  lineTotal                     Int // paise (unitPrice * quantity)
+  personalizationNote           String?
+  giftMessage                   String?
+  madeToOrderSnapshot           Boolean  @default(false) // CANON §16.3
+  productionLeadTimeDaysSnapshot Int? // CANON §16.3
+
+  @@index([orderId])
+  @@index([productId])
+  @@map("order_items")
+}
+
+model OrderStatusEvent {
+  id               String               @id @default(cuid())
+  orderId          String
+  order            Order                @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  status           OrderStatus
+  note             String?              @db.Text
+  changedByAdminId String?
+  changedBy        AdminUser?           @relation(fields: [changedByAdminId], references: [id], onDelete: SetNull)
+  channelNotified  NotificationChannel?
+  customerNotified Boolean              @default(false)
+  createdAt        DateTime             @default(now()) @db.Timestamptz(3)
+
+  @@index([orderId, createdAt])
+  @@map("order_status_events")
+}
+
+model Customer {
+  id             String    @id @default(cuid())
+  name           String
+  phone          String    @unique
+  email          String?
+  ordersCount    Int       @default(0)
+  totalRequested Int       @default(0) // paise
+  firstOrderAt   DateTime? @db.Timestamptz(3)
+  lastOrderAt    DateTime? @db.Timestamptz(3)
+  tags           String[]  @default([])
+  notes          String?   @db.Text
+  orders         Order[]
+  createdAt      DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime  @updatedAt @db.Timestamptz(3)
+
+  @@index([email])
+  @@index([lastOrderAt])
+  @@map("customers")
+}
+
+// ───────────────────────────── leads & contact ─────────────────────────────
+
+model BulkInquiry {
+  id                String        @id @default(cuid())
+  name              String
+  company           String?
+  phone             String
+  email             String
+  productInterest   String?
+  quantity          Int?
+  occasion          String?
+  budget            Int? // paise
+  deadline          DateTime?     @db.Timestamptz(3)
+  message           String        @db.Text
+  status            InquiryStatus @default(new)
+  assignedToAdminId String?
+  assignedTo        AdminUser?    @relation(fields: [assignedToAdminId], references: [id], onDelete: SetNull)
+  internalNotes     String?       @db.Text
+  createdAt         DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime      @updatedAt @db.Timestamptz(3)
+
+  @@index([status, createdAt])
+  @@index([phone])
+  @@index([email])
+  @@map("bulk_inquiries")
+}
+
+model ContactMessage {
+  id        String        @id @default(cuid())
+  name      String
+  email     String
+  phone     String?
+  subject   String?
+  message   String        @db.Text
+  status    ContactStatus @default(new)
+  createdAt DateTime      @default(now()) @db.Timestamptz(3)
+
+  @@index([status, createdAt])
+  @@index([email])
+  @@map("contact_messages")
+}
+
+model NewsletterSubscriber {
+  id             String           @id @default(cuid())
+  email          String           @unique
+  source         SubscriberSource @default(footer)
+  isActive       Boolean          @default(true)
+  subscribedAt   DateTime         @default(now()) @db.Timestamptz(3)
+  unsubscribedAt DateTime?        @db.Timestamptz(3)
+
+  @@index([isActive])
+  @@map("newsletter_subscribers")
+}
+
+// ───────────────────────────── marketing (V1) ─────────────────────────────
+
+model Coupon {
+  id            String     @id @default(cuid())
+  code          String     @unique
+  type          CouponType
+  value         Int // percent (1-100) or fixed paise
+  minOrderValue Int? // paise
+  maxDiscount   Int? // paise
+  usageLimit    Int?
+  usedCount     Int        @default(0)
+  startsAt      DateTime?  @db.Timestamptz(3)
+  endsAt        DateTime?  @db.Timestamptz(3)
+  isActive      Boolean    @default(true)
+  appliesTo     Json?      @db.JsonB
+  createdAt     DateTime   @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime   @updatedAt @db.Timestamptz(3)
+
+  @@index([isActive])
+  @@index([endsAt])
+  @@map("coupons")
+}
+
+model Review {
+  id                 String       @id @default(cuid())
+  productId          String
+  product            Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  orderId            String?
+  order              Order?       @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  customerName       String
+  rating             Int // 1-5 (app-validated)
+  title              String?
+  body               String       @db.Text
+  status             ReviewStatus @default(pending)
+  isVerifiedPurchase Boolean      @default(false)
+  imageIds           String[]     @default([])
+  approvedByAdminId  String?
+  approvedBy         AdminUser?   @relation(fields: [approvedByAdminId], references: [id], onDelete: SetNull)
+  createdAt          DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime     @updatedAt @db.Timestamptz(3)
+
+  @@index([productId, status])
+  @@index([createdAt])
+  @@map("reviews")
+}
+
+// ───────────────────────────── content / CMS ─────────────────────────────
+
+model HomepageSection {
+  id        String              @id @default(cuid())
+  key       String              @unique
+  type      HomepageSectionType
+  payload   Json                @db.JsonB
+  sortOrder Int                 @default(0)
+  isActive  Boolean             @default(true)
+  createdAt DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime            @updatedAt @db.Timestamptz(3)
+
+  @@index([sortOrder])
+  @@index([isActive])
+  @@map("homepage_sections")
+}
+
+model Banner {
+  id        String      @id @default(cuid())
+  type      BannerType
+  text      String?
+  imageId   String?
+  image     MediaAsset? @relation(fields: [imageId], references: [id], onDelete: SetNull)
+  link      String?
+  startsAt  DateTime?   @db.Timestamptz(3)
+  endsAt    DateTime?   @db.Timestamptz(3)
+  sortOrder Int         @default(0)
+  isActive  Boolean     @default(true)
+  createdAt DateTime    @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime    @updatedAt @db.Timestamptz(3)
+
+  @@index([type, isActive])
+  @@map("banners")
+}
+
+model Testimonial {
+  id           String      @id @default(cuid())
+  customerName String
+  location     String?
+  rating       Int?
+  text         String      @db.Text
+  imageId      String?
+  image        MediaAsset? @relation(fields: [imageId], references: [id], onDelete: SetNull)
+  isApproved   Boolean     @default(false)
+  sortOrder    Int         @default(0)
+  isFeatured   Boolean     @default(false)
+  createdAt    DateTime    @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime    @updatedAt @db.Timestamptz(3)
+
+  @@index([isApproved])
+  @@map("testimonials")
+}
+
+model FaqItem {
+  id          String   @id @default(cuid())
+  question    String
+  answer      String   @db.Text
+  category    String?
+  sortOrder   Int      @default(0)
+  isPublished Boolean  @default(true)
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([category])
+  @@index([isPublished])
+  @@map("faq_items")
+}
+
+model CmsPage {
+  id              String    @id @default(cuid())
+  slug            String    @unique
+  title           String
+  bodyRich        String    @db.Text
+  metaTitle       String?
+  metaDescription String?
+  isPublished     Boolean   @default(false)
+  lastReviewedAt  DateTime? @db.Timestamptz(3) // CANON §16.3
+  createdAt       DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime  @updatedAt @db.Timestamptz(3)
+
+  @@index([isPublished])
+  @@map("cms_pages")
+}
+
+model SiteSetting {
+  id               String      @id @default("singleton")
+  storeName        String      @default("GooglyWoogly Art")
+  contactEmail     String      @default("hello@googlywoogly.art")
+  whatsappNumber   String      @default("916367851899")
+  socialLinks      Json?       @db.JsonB
+  shippingDefaults Json?       @db.JsonB // incl. freeShippingThresholdPaise (CANON §16 R-4)
+  gstin            String?
+  currency         String      @default("INR")
+  defaultSeo       Json?       @db.JsonB
+  logoId           String?
+  logo             MediaAsset? @relation(fields: [logoId], references: [id], onDelete: SetNull)
+  announcementBar  Json?       @db.JsonB
+  businessAddress  Json?       @db.JsonB
+  updatedAt        DateTime    @updatedAt @db.Timestamptz(3)
+
+  @@map("site_settings")
+}
+
+// ───────────────────────────── ops ─────────────────────────────
+
+model AdminUser {
+  id                  String               @id @default(cuid())
+  name                String
+  email               String               @unique
+  passwordHash        String
+  role                AdminRole            @default(staff)
+  isActive            Boolean              @default(true)
+  failedLoginCount    Int                  @default(0) // CANON §16.2
+  lockedUntil         DateTime?            @db.Timestamptz(3) // CANON §16.2
+  lastLoginAt         DateTime?            @db.Timestamptz(3)
+  statusEvents        OrderStatusEvent[]
+  bulkInquiries       BulkInquiry[]
+  reviews             Review[]
+  auditLogs           AuditLog[]
+  passwordResetTokens PasswordResetToken[]
+  createdAt           DateTime             @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime             @updatedAt @db.Timestamptz(3)
+
+  @@index([isActive])
+  @@map("admin_users")
+}
+
+model PasswordResetToken {
+  id          String    @id @default(cuid())
+  adminUserId String
+  adminUser   AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
+  tokenHash   String    @unique
+  expiresAt   DateTime  @db.Timestamptz(3)
+  usedAt      DateTime? @db.Timestamptz(3)
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
+
+  @@index([adminUserId])
+  @@map("password_reset_tokens")
+}
+
+model AuditLog {
+  id         String    @id @default(cuid())
+  adminId    String
+  admin      AdminUser @relation(fields: [adminId], references: [id], onDelete: Restrict)
+  action     String
+  entityType String
+  entityId   String
+  before     Json?     @db.JsonB
+  after      Json?     @db.JsonB
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+
+  @@index([adminId])
+  @@index([action])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ───────────────────────────── notifications ─────────────────────────────
+
+model NotificationLog {
+  id                String              @id @default(cuid())
+  orderId           String?
+  order             Order?              @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  channel           NotificationChannel
+  template          String
+  to                String
+  subject           String?
+  status            NotificationStatus  @default(queued)
+  providerMessageId String?
+  error             String?             @db.Text
+  createdAt         DateTime            @default(now()) @db.Timestamptz(3)
+
+  @@index([orderId])
+  @@index([channel])
+  @@index([status])
+  @@index([createdAt])
+  @@map("notification_logs")
+}
+
+model EmailTemplate {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  subject   String
+  htmlBody  String   @db.Text
+  variables String[] @default([])
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@map("email_templates")
+}
+
+// ───────────────────────────── analytics ─────────────────────────────
+
+model AnalyticsEvent {
+  id        String             @id @default(cuid())
+  visitorId String
+  sessionId String?
+  session   AnalyticsSession?  @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  type      AnalyticsEventType
+  path      String
+  referrer  String?
+  productId String? // soft ref (no FK; product may be deleted)
+  value     Int? // paise where relevant
+  metadata  Json?              @db.JsonB
+  device    DeviceType?
+  country   String?
+  utm       Json?              @db.JsonB
+  createdAt DateTime           @default(now()) @db.Timestamptz(3)
+
+  @@index([type, createdAt])
+  @@index([createdAt])
+  @@index([visitorId])
+  @@index([sessionId])
+  @@index([productId])
+  @@map("analytics_events")
+}
+
+model AnalyticsSession {
+  id          String           @id @default(cuid())
+  visitorId   String
+  startedAt   DateTime         @default(now()) @db.Timestamptz(3)
+  lastSeenAt  DateTime         @default(now()) @db.Timestamptz(3)
+  landingPath String
+  referrer    String?
+  utm         Json?            @db.JsonB
+  device      DeviceType?
+  country     String?
+  pageviews   Int              @default(0)
+  isConverted Boolean          @default(false)
+  orderId     String?          @unique
+  order       Order?           @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  events      AnalyticsEvent[]
+
+  @@index([visitorId])
+  @@index([startedAt])
+  @@index([isConverted])
+  @@map("analytics_sessions")
+}
+
+model DailyMetricRollup {
+  date             DateTime @id @db.Date
+  visitors         Int      @default(0)
+  sessions         Int      @default(0)
+  pageviews        Int      @default(0)
+  productViews     Int      @default(0)
+  addToCarts       Int      @default(0)
+  beginCheckouts   Int      @default(0)
+  orders           Int      @default(0)
+  revenueRequested Int      @default(0) // paise
+  conversionRate   Int      @default(0) // basis points (CANON §16 R-11)
+  topProducts      Json?    @db.JsonB
+  topReferrers     Json?    @db.JsonB
+  topPages         Json?    @db.JsonB
+  createdAt        DateTime @default(now()) @db.Timestamptz(3)
+
+  @@map("daily_metric_rollups")
+}
+
+// ───────────────────────────── support ─────────────────────────────
+
+model Redirect {
+  id         String   @id @default(cuid())
+  fromPath   String   @unique
+  toPath     String
+  statusCode Int      @default(301)
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+
+  @@map("redirects")
+}
+
+model Counter {
+  key       String   @id
+  value     Int      @default(0)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@map("counters")
+}
