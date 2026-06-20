@@ -33,7 +33,7 @@ export { signToken, verifyToken, SESSION_COOKIE };
  * `Secure` (real deployments stay protected); HTTP → not `Secure` (local testing
  * keeps the session). Falls back to `NODE_ENV` only when the URL is unset.
  */
-function useSecureCookie(): boolean {
+function secureCookieEnabled(): boolean {
   const url = process.env.NEXT_PUBLIC_SITE_URL ?? "";
   if (url.startsWith("https://")) return true;
   if (url.startsWith("http://")) return false;
@@ -55,7 +55,7 @@ export async function setSession(admin: Pick<AdminUser, "id" | "role">): Promise
   const store = await cookies();
   store.set(SESSION_COOKIE, token, {
     httpOnly: true,
-    secure: useSecureCookie(),
+    secure: secureCookieEnabled(),
     sameSite: "lax",
     path: "/",
     maxAge: SESSION_MAX_AGE_SECONDS,
@@ -67,7 +67,7 @@ export async function clearSession(): Promise<void> {
   const store = await cookies();
   store.set(SESSION_COOKIE, "", {
     httpOnly: true,
-    secure: useSecureCookie(),
+    secure: secureCookieEnabled(),
     sameSite: "lax",
     path: "/",
     maxAge: 0,
