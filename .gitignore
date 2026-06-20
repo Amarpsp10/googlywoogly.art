@@ -17,7 +17,12 @@ yarn-error.log*
 .pnpm-debug.log*
 
 # env files
-.env*
+.env
+.env.*
+!.env.example
+
+# prisma generated client (if using a custom output dir)
+/lib/generated
 
 # vercel
 .vercel
@@ -25,3 +30,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# playwright / e2e artifacts
+/test-results/
+/playwright-report/
+/playwright/.cache/
