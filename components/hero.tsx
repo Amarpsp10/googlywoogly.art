@@ -48,7 +48,16 @@ const SparkleParticle = ({ style }: { style: React.CSSProperties }) => (
   />
 );
 
-export function Hero() {
+/** Editable hero copy (Content → Homepage → Hero). All optional — unset fields
+ *  fall back to the original design, so the landing looks identical by default. */
+export interface HeroContent {
+  headline?: string;
+  sub?: string;
+  ctaLabel?: string;
+  ctaHref?: string;
+}
+
+export function Hero({ content }: { content?: HeroContent }) {
   // Generate random sparkle positions
   const sparkles = Array.from({ length: 20 }, (_, i) => ({
     left: `${Math.random() * 100}%`,
@@ -154,30 +163,36 @@ export function Hero() {
             transition={{ delay: 0.3, duration: 0.8 }}
             className="text-4xl md:text-6xl lg:text-7xl font-serif font-bold mb-6 text-balance"
           >
-            <span className="text-foreground">Unique </span>
-            <span className="text-primary relative">
-              Handmade
-              <motion.svg
-                className="absolute -bottom-2 left-0 w-full"
-                viewBox="0 0 300 12"
-                initial={{ pathLength: 0 }}
-                animate={{ pathLength: 1 }}
-                transition={{ delay: 1, duration: 1 }}
-              >
-                <motion.path
-                  d="M0 6 Q75 0 150 6 T300 6"
-                  fill="none"
-                  stroke="#FFE566"
-                  strokeWidth="4"
-                  strokeLinecap="round"
-                />
-              </motion.svg>
-            </span>
-            <br />
-            <span className="text-foreground">Gifts for Every </span>
-            <span className="bg-gradient-to-r from-[#FFB3C6] via-[#E0C6FF] to-[#B8F4D0] bg-clip-text text-transparent">
-              Occasion
-            </span>
+            {content?.headline ? (
+              <span className="text-foreground">{content.headline}</span>
+            ) : (
+              <>
+                <span className="text-foreground">Unique </span>
+                <span className="text-primary relative">
+                  Handmade
+                  <motion.svg
+                    className="absolute -bottom-2 left-0 w-full"
+                    viewBox="0 0 300 12"
+                    initial={{ pathLength: 0 }}
+                    animate={{ pathLength: 1 }}
+                    transition={{ delay: 1, duration: 1 }}
+                  >
+                    <motion.path
+                      d="M0 6 Q75 0 150 6 T300 6"
+                      fill="none"
+                      stroke="#FFE566"
+                      strokeWidth="4"
+                      strokeLinecap="round"
+                    />
+                  </motion.svg>
+                </span>
+                <br />
+                <span className="text-foreground">Gifts for Every </span>
+                <span className="bg-gradient-to-r from-[#FFB3C6] via-[#E0C6FF] to-[#B8F4D0] bg-clip-text text-transparent">
+                  Occasion
+                </span>
+              </>
+            )}
           </motion.h1>
 
           {/* Subheading */}
@@ -187,9 +202,8 @@ export function Hero() {
             transition={{ delay: 0.5, duration: 0.8 }}
             className="text-lg md:text-xl text-muted-foreground mb-8 max-w-2xl mx-auto text-pretty"
           >
-            Transform your special moments into cherished memories with
-            personalized, handcrafted gifts made with passion and creativity by
-            Vanshika Bhatia.
+            {content?.sub ??
+              "Transform your special moments into cherished memories with personalized, handcrafted gifts made with passion and creativity by Vanshika Bhatia."}
           </motion.p>
 
           {/* CTA Buttons */}
@@ -204,8 +218,8 @@ export function Hero() {
               className="bg-primary hover:bg-primary/90 text-primary-foreground px-8 py-6 text-lg rounded-full shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 group"
               asChild
             >
-              <Link href="/products">
-                Shop Collection
+              <Link href={content?.ctaHref ?? "/products"}>
+                {content?.ctaLabel ?? "Shop Collection"}
                 <ArrowRight className="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" />
               </Link>
             </Button>

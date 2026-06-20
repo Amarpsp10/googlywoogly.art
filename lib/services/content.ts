@@ -47,6 +47,40 @@ export const getHomepageSections = cache(
   },
 );
 
+/** Editable hero copy from the active `hero` homepage section. */
+export interface HeroContent {
+  headline?: string;
+  sub?: string;
+  ctaLabel?: string;
+  ctaHref?: string;
+}
+
+/**
+ * The landing hero's editable copy (Content → Homepage → Hero). Returns null when
+ * there's no active hero section or no usable fields, so the landing keeps its
+ * default design. Reads the `payload` JSON (validated on write by `heroPayload`).
+ */
+export async function getHeroContent(): Promise<HeroContent | null> {
+  const section = await prisma.homepageSection.findFirst({
+    where: { type: "hero", isActive: true },
+    select: { payload: true },
+  });
+  const p = section?.payload;
+  if (!p || typeof p !== "object" || Array.isArray(p)) return null;
+  const row = p as Record<string, unknown>;
+  const str = (v: unknown) =>
+    typeof v === "string" && v.trim().length > 0 ? v.trim() : undefined;
+  const content: HeroContent = {
+    headline: str(row.headline),
+    sub: str(row.sub),
+    ctaLabel: str(row.ctaLabel),
+    ctaHref: str(row.ctaHref),
+  };
+  return content.headline || content.sub || content.ctaLabel || content.ctaHref
+    ? content
+    : null;
+}
+
 // ───────────────────────────── banners ─────────────────────────────
 
 const bannerSelect = {

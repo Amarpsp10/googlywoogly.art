@@ -3,6 +3,11 @@ import {
   getFeaturedProducts,
   getBestsellers,
 } from "@/lib/services/catalog";
+import {
+  getHeroContent,
+  getFeaturedTestimonials,
+  getActiveBanners,
+} from "@/lib/services/content";
 import { Navbar } from "@/components/navbar";
 import { Hero } from "@/components/hero";
 import { MarqueeBanner } from "@/components/marquee-banner";
@@ -24,31 +29,41 @@ import { Footer } from "@/components/footer";
  * navigation), so it lives at the app root, NOT inside the `(shop)` route group
  * (whose layout supplies the store header/footer for /products, /cart, etc.).
  *
- * Only the Categories + Featured Products sections are data-driven (real catalog
- * via the DB); every other section is the original design verbatim. Revalidated
- * on-demand by the catalog cache tags + hourly as a safety net.
+ * Data-driven sections (admin-managed, with the original copy as fallback so the
+ * design is identical until the founder edits anything): Categories, Featured
+ * Products, the Hero copy/CTA (Content → Homepage → Hero), Testimonials, and the
+ * Marquee strip (Content → Banners). Every other section is the original design
+ * verbatim. Admin writes call `revalidatePath('/')`, so edits go live at once.
  */
 export const revalidate = 3600;
 
 export default async function HomePage() {
-  const [categories, featured, bestsellers] = await Promise.all([
-    listActiveCategories(),
-    getFeaturedProducts(8),
-    getBestsellers(8),
-  ]);
+  const [categories, featured, bestsellers, heroContent, testimonials, marqueeBanners] =
+    await Promise.all([
+      listActiveCategories(),
+      getFeaturedProducts(8),
+      getBestsellers(8),
+      getHeroContent(),
+      getFeaturedTestimonials(8),
+      getActiveBanners("marquee"),
+    ]);
   // Prefer explicitly-featured products; fall back to bestsellers so the section
   // is never empty when nothing is flagged featured.
   const products = featured.length > 0 ? featured : bestsellers;
+  // Marquee strip text (non-empty active marquee banners), if any are set.
+  const marqueeTexts = marqueeBanners
+    .map((b) => b.text?.trim())
+    .filter((t): t is string => Boolean(t));
 
   return (
     <main className="min-h-screen">
       <Navbar />
 
       <section id="home">
-        <Hero />
+        <Hero content={heroContent ?? undefined} />
       </section>
 
-      <MarqueeBanner />
+      <MarqueeBanner items={marqueeTexts} />
 
       <section id="features">
         <Features />
@@ -71,7 +86,7 @@ export default async function HomePage() {
       </section>
 
       <section id="testimonials">
-        <Testimonials />
+        <Testimonials items={testimonials} />
       </section>
 
       <CustomOrder />

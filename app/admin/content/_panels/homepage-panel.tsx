@@ -13,11 +13,9 @@ import { EditorSheet } from "../_components/editor-sheet";
 import { SectionEditorForm } from "../_components/section-editor";
 import { AddSection } from "../_components/add-section";
 import { QuickToggle } from "../_components/quick-toggle";
-import { ReorderControls } from "../_components/reorder-controls";
 import { SeedButton } from "../_components/seed-button";
 import {
   toggleHomepageSection,
-  reorderHomepageSections,
   deleteHomepageSection,
   seedDefaultHomepage,
 } from "../_actions/homepage";
@@ -41,12 +39,10 @@ export async function HomepagePanel() {
     },
   });
 
-  const ids = sections.map((s) => s.id);
-
   return (
     <Panel
       title="Homepage sections"
-      description="Reorder, hide, or edit each block. Changes go live in seconds."
+      description="Hide or edit each block's content. Changes go live in seconds."
       action={<AddSection />}
     >
       {sections.length === 0 ? (
@@ -58,15 +54,13 @@ export async function HomepagePanel() {
         />
       ) : (
         <ul className="space-y-2">
-          {sections.map((section, index) => {
+          {sections.map((section) => {
             const meta = SECTION_TYPE_META[section.type];
             return (
               <li
                 key={section.id}
                 className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl border border-border bg-card p-3"
               >
-                <ReorderControls ids={ids} index={index} action={reorderHomepageSections} />
-
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-sm font-semibold text-foreground">{meta.label}</span>
