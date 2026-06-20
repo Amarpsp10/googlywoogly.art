@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { Menu, ExternalLink, Sparkles } from "lucide-react";
 import {
   Sheet,
@@ -59,6 +59,10 @@ export function AdminShell({
   const groups = React.useMemo(() => navForRole(admin.role), [admin.role]);
   const [mobileOpen, setMobileOpen] = React.useState(false);
   const pathname = usePathname();
+  // The content workspace uses `?tab=` tabs that share the `/admin/content`
+  // path, so fold the tab into the value the nav matches against.
+  const tab = useSearchParams().get("tab");
+  const current = tab ? `${pathname}?tab=${tab}` : pathname;
 
   // Close the mobile drawer on navigation.
   React.useEffect(() => {
@@ -79,7 +83,7 @@ export function AdminShell({
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r border-sidebar-border bg-sidebar lg:flex">
         <BrandHeader storeName={storeName} />
         <nav className="flex-1 overflow-y-auto px-3 py-4" aria-label="Admin">
-          <NavGroups groups={groups} badges={badges} pathname={pathname} />
+          <NavGroups groups={groups} badges={badges} current={current} />
         </nav>
         <ViewStore />
       </aside>
@@ -101,7 +105,7 @@ export function AdminShell({
             <SheetTitle className="sr-only">Admin navigation</SheetTitle>
             <BrandHeader storeName={storeName} />
             <nav className="flex-1 overflow-y-auto px-3 py-4" aria-label="Admin">
-              <NavGroups groups={groups} badges={badges} pathname={pathname} />
+              <NavGroups groups={groups} badges={badges} current={current} />
             </nav>
             <ViewStore />
           </SheetContent>
@@ -159,11 +163,11 @@ function BrandHeader({ storeName }: { storeName: string }) {
 function NavGroups({
   groups,
   badges,
-  pathname,
+  current,
 }: {
   groups: AdminNavGroup[];
   badges?: NavBadgeCounts;
-  pathname: string;
+  current: string;
 }) {
   return (
     <div className="space-y-5">
@@ -175,7 +179,7 @@ function NavGroups({
           <ul className="space-y-0.5">
             {group.items.map((item) => (
               <li key={item.href}>
-                <NavLink item={item} active={isActive(pathname, item.href)} badges={badges} />
+                <NavLink item={item} active={isActive(current, item.href)} badges={badges} />
               </li>
             ))}
           </ul>
@@ -284,10 +288,18 @@ function AccountMenu({ admin }: { admin: AdminShellAdmin }) {
   );
 }
 
-/** Active when the path equals the href, or is a sub-path (but `/admin` is exact). */
-function isActive(pathname: string, href: string): boolean {
-  if (href === "/admin") return pathname === "/admin";
-  return pathname === href || pathname.startsWith(`${href}/`);
+/**
+ * Active when the current location equals the href, or is a sub-path (but
+ * `/admin` is exact). `current` carries the `?tab=` of the content workspace, so
+ * a tab href (`/admin/content?tab=faq`) must match exactly — otherwise every
+ * content tab would light up its sibling — while path-only hrefs still match
+ * their sub-paths (e.g. `/admin/products` → `/admin/products/123`).
+ */
+function isActive(current: string, href: string): boolean {
+  if (href === "/admin") return current === "/admin";
+  if (current === href) return true;
+  if (href.includes("?")) return false;
+  return current === href || current.startsWith(`${href}/`);
 }
 
 function getInitials(name: string): string {
