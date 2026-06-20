@@ -30,6 +30,7 @@ import {
   revalidateCategory,
   revalidateCollection,
   revalidateHome,
+  revalidateSitemap,
 } from "@/lib/revalidate";
 
 /**
@@ -254,6 +255,10 @@ async function revalidateProductWrite(opts: {
     for (const c of cols) revalidateCollection(c.slug); // collection:{slug} + products
   }
   if (opts.isFeatured) revalidateHome();
+
+  // The product URL set changed (create/publish/unpublish/archive/delete or a
+  // slug change), so refresh the sitemap too (CANON §9 / SEO).
+  revalidateSitemap();
 }
 
 /** Replace manual collection memberships (CollectionProduct join) for a product. */

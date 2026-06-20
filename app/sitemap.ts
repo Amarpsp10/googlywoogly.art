@@ -6,6 +6,13 @@ import {
 } from "@/lib/services/catalog";
 import { absoluteUrl } from "@/lib/seo/metadata";
 
+/**
+ * ISR so the sitemap is regenerable at runtime: admin catalog writes call
+ * `revalidateSitemap()` (revalidatePath('/sitemap.xml')) for an immediate
+ * refresh, and this hourly interval is the safety net.
+ */
+export const revalidate = 3600;
+
 const STATIC_ROUTES = [
   "/",
   "/products",
