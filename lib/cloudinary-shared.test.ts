@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   publicIdFromUrl,
+  cloudNameFromUrl,
   isCloudinaryUrl,
   UPLOAD_MAX_BYTES,
   UPLOAD_ALLOWED_MIME,
@@ -50,6 +51,33 @@ describe("publicIdFromUrl", () => {
     expect(publicIdFromUrl(null)).toBeNull();
     expect(publicIdFromUrl(undefined)).toBeNull();
     expect(publicIdFromUrl("")).toBeNull();
+  });
+});
+
+describe("cloudNameFromUrl", () => {
+  it("extracts the cloud name from a real delivery URL", () => {
+    // The fix for the storefront 404: CldImage must render against `dpkugi3fd`,
+    // not next-cloudinary's `ml_default` fallback when the env var is unset.
+    expect(
+      cloudNameFromUrl(
+        "https://res.cloudinary.com/dpkugi3fd/image/upload/v1782034924/googlywoogly/products/dhnqtfikjjb8bsharanj.jpg",
+      ),
+    ).toBe("dpkugi3fd");
+  });
+
+  it("extracts the cloud name from a transformed URL", () => {
+    expect(
+      cloudNameFromUrl(
+        "https://res.cloudinary.com/demo/image/upload/f_auto,q_auto/v123/products/mug.webp",
+      ),
+    ).toBe("demo");
+  });
+
+  it("returns null for non-Cloudinary or missing URLs", () => {
+    expect(cloudNameFromUrl("https://picsum.photos/seed/x/900/900")).toBeNull();
+    expect(cloudNameFromUrl(null)).toBeNull();
+    expect(cloudNameFromUrl(undefined)).toBeNull();
+    expect(cloudNameFromUrl("")).toBeNull();
   });
 });
 

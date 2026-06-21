@@ -39,3 +39,18 @@ export function publicIdFromUrl(url: string | null | undefined): string | null {
   }
   return path.replace(/\.[a-z0-9]+$/i, "");
 }
+
+/**
+ * Extract the Cloudinary **cloud name** (the path segment right after the host)
+ * from a delivery URL. `<CldImage>` rebuilds its URL from a publicId and needs
+ * the cloud name — by default it reads the build-time `NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME`
+ * env var, and if that is unset in an environment, next-cloudinary silently falls
+ * back to its `ml_default` demo cloud and **404s every product image**. Passing the
+ * cloud name parsed from the stored URL makes rendering independent of that env var.
+ * Returns null for non-Cloudinary URLs.
+ */
+export function cloudNameFromUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const m = /res\.cloudinary\.com\/([^/]+)\/(?:image|video|raw)\/upload\//.exec(url);
+  return m ? m[1] : null;
+}

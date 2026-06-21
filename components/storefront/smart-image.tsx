@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { CldImage } from "next-cloudinary";
-import { publicIdFromUrl } from "@/lib/cloudinary-shared";
+import { publicIdFromUrl, cloudNameFromUrl } from "@/lib/cloudinary-shared";
 
 /**
  * `SmartImage` — render Cloudinary-hosted images through `<CldImage>` so delivery
@@ -36,8 +36,14 @@ export function SmartImage({
   className,
 }: SmartImageProps) {
   const publicId = publicIdFromUrl(src);
+  const cloudName = cloudNameFromUrl(src);
 
   if (publicId) {
+    // Tell CldImage the cloud name parsed from the stored URL rather than relying
+    // on NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME (if that build-time env var is unset in
+    // an environment, next-cloudinary silently uses its `ml_default` demo cloud
+    // and 404s every image). `config` is undefined → falls back to the env default.
+    const config = cloudName ? { cloud: { cloudName } } : undefined;
     // CldImage applies f_auto + q_auto by default; the loader emits a Cloudinary
     // srcset so each viewport gets a right-sized image straight from the CDN.
     return fill ? (
@@ -48,6 +54,7 @@ export function SmartImage({
         sizes={sizes}
         priority={priority}
         className={className}
+        config={config}
       />
     ) : (
       <CldImage
@@ -58,6 +65,7 @@ export function SmartImage({
         sizes={sizes}
         priority={priority}
         className={className}
+        config={config}
       />
     );
   }
