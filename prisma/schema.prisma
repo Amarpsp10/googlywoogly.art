@@ -617,7 +617,7 @@ model CmsPage {
 model SiteSetting {
   id               String      @id @default("singleton")
   storeName        String      @default("GooglyWoogly Art")
-  contactEmail     String      @default("hello@googlywoogly.art")
+  contactEmail     String      @default("googlywooglyarrtt@gmail.com")
   whatsappNumber   String      @default("916367851899")
   socialLinks      Json?       @db.JsonB
   shippingDefaults Json?       @db.JsonB // incl. freeShippingThresholdPaise (CANON §16 R-4)

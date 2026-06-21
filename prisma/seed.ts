@@ -21,7 +21,7 @@ async function seedSettingsAndAdmin() {
     create: {
       id: "singleton",
       storeName: "GooglyWoogly Art",
-      contactEmail: "hello@googlywoogly.art",
+      contactEmail: "googlywooglyarrtt@gmail.com",
       whatsappNumber: process.env.WHATSAPP_NUMBER ?? "916367851899",
       currency: "INR",
       socialLinks: { instagram: "https://instagram.com/googlywoogly_arrtt" },
