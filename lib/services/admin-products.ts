@@ -265,13 +265,16 @@ export async function getProductFormTaxonomy(): Promise<{
 
 /** Distinct existing tags across the catalog (for the tag-input autocomplete). */
 export async function getDistinctTags(limit = 200): Promise<string[]> {
-  const rows = await prisma.product.findMany({
-    select: { tags: true },
-    take: 2000,
-  });
-  const set = new Set<string>();
-  for (const r of rows) for (const t of r.tags) set.add(t);
-  return Array.from(set).sort().slice(0, limit);
+  // Distinct/sort/limit in Postgres instead of fetching every product's full
+  // `tags` array and de-duping in JS — the DB returns only the ≤`limit` strings
+  // we actually use, not thousands of rows.
+  const rows = await prisma.$queryRaw<{ tag: string }[]>`
+    SELECT DISTINCT tag
+    FROM "products", unnest("tags") AS tag
+    ORDER BY tag
+    LIMIT ${limit}
+  `;
+  return rows.map((r) => r.tag);
 }
 
 // ───────────────────────────── inventory view ─────────────────────────────

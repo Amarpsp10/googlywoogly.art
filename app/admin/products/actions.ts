@@ -240,20 +240,24 @@ async function revalidateProductWrite(opts: {
     ...(opts.oldCollectionIds ?? []),
   ]);
 
-  if (categoryIds.size > 0) {
-    const cats = await prisma.category.findMany({
-      where: { id: { in: [...categoryIds] } },
-      select: { slug: true },
-    });
-    for (const c of cats) revalidateCategory(c.slug); // category:{slug} + products + nav
-  }
-  if (collectionIds.size > 0) {
-    const cols = await prisma.collection.findMany({
-      where: { id: { in: [...collectionIds] } },
-      select: { slug: true },
-    });
-    for (const c of cols) revalidateCollection(c.slug); // collection:{slug} + products
-  }
+  // Both lookups are independent — fire them concurrently so a write pays one
+  // DB round-trip here, not two in series (matters most cross-region).
+  const [cats, cols] = await Promise.all([
+    categoryIds.size > 0
+      ? prisma.category.findMany({
+          where: { id: { in: [...categoryIds] } },
+          select: { slug: true },
+        })
+      : Promise.resolve([] as { slug: string }[]),
+    collectionIds.size > 0
+      ? prisma.collection.findMany({
+          where: { id: { in: [...collectionIds] } },
+          select: { slug: true },
+        })
+      : Promise.resolve([] as { slug: string }[]),
+  ]);
+  for (const c of cats) revalidateCategory(c.slug); // category:{slug} + products + nav
+  for (const c of cols) revalidateCollection(c.slug); // collection:{slug} + products
   if (opts.isFeatured) revalidateHome();
 
   // The product URL set changed (create/publish/unpublish/archive/delete or a
