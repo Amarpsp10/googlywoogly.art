@@ -5,10 +5,17 @@ import { prisma } from "@/lib/db";
 /**
  * Provider-agnostic email transport (docs/14 §3.2 FR-6/FR-8, §5.2).
  *
- * - If `RESEND_API_KEY` is set, sends via the **Resend REST API** with `fetch`
- *   (no SDK, no new deps — CANON §16.8). From = `EMAIL_FROM`.
- * - Otherwise (local/dev), logs a one-line summary to the console and resolves
- *   as a successful "dev-console" send so the rest of the flow works offline.
+ * Provider precedence (first configured wins):
+ * - `RESEND_API_KEY` set → send via the **Resend REST API** with `fetch`
+ *   (no SDK). From = `EMAIL_FROM`. Reserved for when we move to a dedicated
+ *   provider on a custom domain.
+ * - else `SMTP_HOST` set → send via **SMTP** (Nodemailer). This is the current
+ *   small-scale setup: Gmail SMTP (`smtp.gmail.com`) authenticated with a Gmail
+ *   **App Password** (`SMTP_USER`/`SMTP_PASS`). From = `EMAIL_FROM` (must be the
+ *   authenticated Gmail address or a verified "send mail as" alias, else Gmail
+ *   rewrites it). Replies land directly in that inbox → two-way support.
+ * - else (local/dev) → log a one-line summary and resolve as a successful
+ *   "dev-console" send so the rest of the flow works offline.
  *
  * Every attempt writes exactly one `NotificationLog` row (FR-3): channel
  * `email`, the `template` key, recipient `to`, `subject`, `status`
@@ -125,6 +132,41 @@ async function sendViaResend(
 }
 
 /**
+ * Send via SMTP (Nodemailer). Used for the Gmail App-Password setup. Nodemailer
+ * is imported lazily so it is only pulled in when SMTP is the active provider
+ * (keeps it out of the Resend/dev paths). Timeouts mirror the Resend ceiling so a
+ * hung SMTP server can never stall order placement.
+ */
+async function sendViaSmtp(from: string, input: SendEmailInput & { to: string }): Promise<string> {
+  const host = process.env.SMTP_HOST as string;
+  const port = Number(process.env.SMTP_PORT ?? 465);
+  const user = process.env.SMTP_USER;
+  const pass = process.env.SMTP_PASS;
+  // Implicit TLS on 465; STARTTLS on 587. `SMTP_SECURE` overrides if set.
+  const secure = process.env.SMTP_SECURE ? process.env.SMTP_SECURE === "true" : port === 465;
+
+  const nodemailer = (await import("nodemailer")).default;
+  const transporter = nodemailer.createTransport({
+    host,
+    port,
+    secure,
+    auth: user && pass ? { user, pass } : undefined,
+    connectionTimeout: SEND_TIMEOUT_MS,
+    greetingTimeout: SEND_TIMEOUT_MS,
+    socketTimeout: SEND_TIMEOUT_MS,
+  });
+
+  const info = await transporter.sendMail({
+    from,
+    to: input.to,
+    subject: input.subject,
+    html: input.html,
+    ...(input.replyTo ? { replyTo: input.replyTo } : {}),
+  });
+  return info.messageId ?? "";
+}
+
+/**
  * Send a transactional email and log the attempt. Resolves `{ ok:false }` on any
  * failure (never throws). When no provider is configured, logs to the console and
  * resolves `{ id:"dev-console", ok:true }`.
@@ -132,7 +174,17 @@ async function sendViaResend(
 export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult> {
   const template = input.template ?? "custom";
   const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.EMAIL_FROM ?? "GooglyWoogly Art <orders@googlywoogly.art>";
+  const smtpHost = process.env.SMTP_HOST;
+  const smtpUser = process.env.SMTP_USER;
+
+  // From: explicit `EMAIL_FROM` wins; otherwise a per-provider default. For the
+  // SMTP/Gmail path the From must be the authenticated account, so fall back to
+  // `SMTP_USER` (Gmail rewrites any other From to the real account anyway).
+  const from =
+    process.env.EMAIL_FROM ??
+    (!apiKey && smtpHost && smtpUser
+      ? `GooglyWoogly Art <${smtpUser}>`
+      : "GooglyWoogly Art <orders@googlywoogly.art>");
 
   // Guard an empty/garbage recipient before we attempt a send (FR-34 `skipped`
   // semantics are handled by callers; here we hard-fail an obviously invalid to).
@@ -150,11 +202,11 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult>
   }
 
   // ── Dev / no-provider path: console fallback ──
-  if (!apiKey) {
+  if (!apiKey && !smtpHost) {
     console.log(
       `[email:dev] → ${to} · "${input.subject}" · template=${template}${
         input.orderId ? ` · order=${input.orderId}` : ""
-      } (no RESEND_API_KEY; not sent)`,
+      } (no email provider configured; not sent)`,
     );
     await writeLog({
       to,
@@ -167,9 +219,11 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult>
     return { id: "dev-console", ok: true };
   }
 
-  // ── Provider path: Resend REST API ──
+  // ── Provider path: Resend REST API (preferred) or SMTP/Gmail ──
   try {
-    const providerMessageId = await sendViaResend(apiKey, from, { ...input, to });
+    const providerMessageId = apiKey
+      ? await sendViaResend(apiKey, from, { ...input, to })
+      : await sendViaSmtp(from, { ...input, to });
     await writeLog({
       to,
       subject: input.subject,
