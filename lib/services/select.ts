@@ -42,7 +42,7 @@ export const productDetailSelect = {
   metaDescription: true,
   publishedAt: true,
   images: {
-    select: { url: true, alt: true, width: true, height: true, sortOrder: true, isPrimary: true },
+    select: { url: true, alt: true, type: true, width: true, height: true, sortOrder: true, isPrimary: true },
     orderBy: { sortOrder: "asc" },
   },
 } satisfies Prisma.ProductSelect;

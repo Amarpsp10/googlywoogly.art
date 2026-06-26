@@ -82,7 +82,13 @@ export default async function ProductDetailPage({
 
       <div className="grid gap-8 lg:grid-cols-2 lg:gap-12">
         <ProductGallery
-          images={product.images.map((i) => ({ url: i.url, alt: i.alt }))}
+          images={product.images.map((i) => ({
+            url: i.url,
+            alt: i.alt,
+            mediaType: i.type === "video" ? "video" : "image",
+            width: i.width,
+            height: i.height,
+          }))}
           title={product.title}
         />
 
@@ -174,7 +180,8 @@ export default async function ProductDetailPage({
           sku: product.sku,
           description: product.shortDescription,
           price: product.price,
-          imageUrls: product.images.map((i) => i.url),
+          // Product schema images are stills only — never advertise a video as an image.
+          imageUrls: product.images.filter((i) => i.type !== "video").map((i) => i.url),
           inventoryState: product.inventoryState,
         })}
       />

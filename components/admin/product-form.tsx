@@ -300,14 +300,16 @@ const productFormResolver: Resolver<ProductFormValues> = (values) => {
   return { values: {}, errors };
 };
 
-/** Map the draft image set onto the action's ProductImageInput shape. */
+/** Map the draft media set onto the action's ProductImageInput shape. */
 function toImageInputs(images: ProductImageDraft[]): ProductImageInput[] {
   return images.map((img) => ({
     mediaAssetId: img.mediaAssetId,
     url: img.url,
     alt: img.alt || undefined,
+    mediaType: img.mediaType ?? "image",
     width: img.width,
     height: img.height,
+    duration: img.duration,
     publicId: img.publicId,
     sizeBytes: img.sizeBytes,
     isPrimary: img.isPrimary,
@@ -337,19 +339,23 @@ export function ProductForm({
   const [status, setStatus] = React.useState<ProductStatus>(
     (product?.status as ProductStatus) ?? "draft",
   );
-  const [images, setImages] = React.useState<ProductImageDraft[]>(
-    product
-      ? product.images.map((img, i) => ({
-          key: `existing-${img.id}`,
-          mediaAssetId: img.mediaAssetId ?? undefined,
-          url: img.url,
-          alt: img.alt ?? "",
-          width: img.width ?? undefined,
-          height: img.height ?? undefined,
-          isPrimary: img.isPrimary || (i === 0 && !product.images.some((x) => x.isPrimary)),
-        }))
-      : [],
-  );
+  const [images, setImages] = React.useState<ProductImageDraft[]>(() => {
+    if (!product) return [];
+    const imgs = product.images;
+    // Primary is image-only: ignore videos, and fall back to the first IMAGE row.
+    const anyPrimary = imgs.some((x) => x.isPrimary && x.type !== "video");
+    const firstImageIdx = imgs.findIndex((x) => x.type !== "video");
+    return imgs.map((img, i) => ({
+      key: `existing-${img.id}`,
+      mediaAssetId: img.mediaAssetId ?? undefined,
+      url: img.url,
+      alt: img.alt ?? "",
+      mediaType: img.type === "video" ? "video" : "image",
+      width: img.width ?? undefined,
+      height: img.height ?? undefined,
+      isPrimary: img.type !== "video" && (anyPrimary ? img.isPrimary : i === firstImageIdx),
+    }));
+  });
   const [slugEditable, setSlugEditable] = React.useState(!isEdit || product?.publishedAt === null);
   const [serverError, setServerError] = React.useState<string | null>(null);
   const [isPending, startTransition] = React.useTransition();

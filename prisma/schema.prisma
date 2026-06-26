@@ -232,6 +232,10 @@ model ProductImage {
   mediaAsset   MediaAsset? @relation(fields: [mediaAssetId], references: [id], onDelete: SetNull)
   url          String
   alt          String?
+  // Denormalized media kind so the PDP gallery can branch image↔video without a
+  // join to MediaAsset. Videos are never the primary/OG/LCP image (enforced in
+  // reconcileImages). Defaults to `image` so every existing row stays valid.
+  type         MediaType   @default(image)
   width        Int?
   height       Int?
   sortOrder    Int         @default(0)
@@ -306,6 +310,8 @@ model MediaAsset {
   type          MediaType      @default(image)
   width         Int?
   height        Int?
+  // Clip length in whole seconds (videos only; null for images/documents).
+  duration      Int?
   sizeBytes     Int?
   folder        String?
   publicId      String?        @unique

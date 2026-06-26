@@ -12,6 +12,8 @@ import {
   Loader2,
   AlertCircle,
   Link2,
+  Play,
+  Film,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AdminInput, AdminLabel } from "@/components/admin/form-field";
@@ -20,15 +22,21 @@ import {
   UPLOAD_ACCEPT,
   UPLOAD_MAX_BYTES,
   UPLOAD_ALLOWED_MIME,
+  UPLOAD_VIDEO_ACCEPT,
+  UPLOAD_VIDEO_MAX_BYTES,
+  UPLOAD_VIDEO_ALLOWED_MIME,
 } from "@/lib/cloudinary-shared";
+import { uploadToCloudinary } from "@/lib/cloudinary-upload";
 import { cn } from "@/lib/utils";
 
 /**
- * A product image in the form's working set (docs/11 FR-13/14/15). Images arrive
- * two ways: a signed drag-and-drop **upload** to Cloudinary (sets `publicId` +
- * dimensions), or a pasted **URL** (zero-config fallback). `mediaAssetId` is
- * undefined until the server upserts a `MediaAsset` on save. Reorder / set-primary
- * / alt are all keyboard-operable (no drag dependency) per a11y (FR-14, §4.10).
+ * A product media item in the form's working set (docs/11 FR-13/14/15). Media
+ * arrive two ways: a signed drag-and-drop **upload** to Cloudinary (sets `publicId`
+ * + dimensions; videos also carry `duration`), or a pasted image **URL** (zero-config
+ * fallback). `mediaAssetId` is undefined until the server upserts a `MediaAsset` on
+ * save. `mediaType` defaults to `image`; a `video` row renders a clip in the gallery
+ * but can NEVER be the primary/hero shot. Reorder / set-primary / alt are all
+ * keyboard-operable (no drag dependency) per a11y (FR-14, §4.10).
  */
 export interface ProductImageDraft {
   /** Stable client key for React lists. */
@@ -36,8 +44,12 @@ export interface ProductImageDraft {
   mediaAssetId?: string;
   url: string;
   alt: string;
+  /** Media kind — `image` (default) or `video`. */
+  mediaType?: "image" | "video";
   width?: number;
   height?: number;
+  /** Clip length in whole seconds (videos only). */
+  duration?: number;
   /** Cloudinary public id (uploads only) — enables dedup + cleanup on the server. */
   publicId?: string;
   sizeBytes?: number;
@@ -57,16 +69,7 @@ function newKey(prefix = "img"): string {
 
 /** Create a draft image from a pasted URL (first one becomes primary). */
 export function makeImageDraft(url: string, isFirst: boolean): ProductImageDraft {
-  return { key: newKey(), url: url.trim(), alt: "", isPrimary: isFirst };
-}
-
-/** The minimal Cloudinary upload response we consume. */
-interface CloudinaryUploadResult {
-  secure_url: string;
-  public_id: string;
-  width?: number;
-  height?: number;
-  bytes?: number;
+  return { key: newKey(), url: url.trim(), alt: "", mediaType: "image", isPrimary: isFirst };
 }
 
 /** An in-flight (or failed) upload shown in the dropzone while it completes. */
@@ -78,58 +81,19 @@ interface UploadTask {
   error?: string;
 }
 
-/** POST one file straight to Cloudinary with progress (bytes skip our server). */
-function uploadToCloudinary(
-  file: File,
-  signed: {
-    cloudName: string;
-    apiKey: string;
-    timestamp: number;
-    folder: string;
-    signature: string;
-  },
-  onProgress: (pct: number) => void,
-): Promise<CloudinaryUploadResult> {
-  return new Promise((resolve, reject) => {
-    const form = new FormData();
-    form.append("file", file);
-    form.append("api_key", signed.apiKey);
-    form.append("timestamp", String(signed.timestamp));
-    form.append("folder", signed.folder);
-    form.append("signature", signed.signature);
-
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", `https://api.cloudinary.com/v1_1/${signed.cloudName}/image/upload`);
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
-    };
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        try {
-          resolve(JSON.parse(xhr.responseText) as CloudinaryUploadResult);
-        } catch {
-          reject(new Error("Cloudinary returned an unexpected response."));
-        }
-      } else {
-        let msg = `Upload failed (${xhr.status}).`;
-        try {
-          const body = JSON.parse(xhr.responseText);
-          if (body?.error?.message) msg = body.error.message;
-        } catch {
-          /* keep default */
-        }
-        reject(new Error(msg));
-      }
-    };
-    xhr.onerror = () => reject(new Error("Network error during upload."));
-    xhr.send(form);
-  });
-}
-
 /** Client-side guard mirroring the server limits (fast feedback before signing). */
 function validateFile(file: File): string | null {
+  if (file.type.startsWith("video/")) {
+    if (!(UPLOAD_VIDEO_ALLOWED_MIME as readonly string[]).includes(file.type)) {
+      return `${file.name}: unsupported video type. Use MP4, MOV or WebM.`;
+    }
+    if (file.size > UPLOAD_VIDEO_MAX_BYTES) {
+      return `${file.name}: too large (max ${Math.round(UPLOAD_VIDEO_MAX_BYTES / 1024 / 1024)} MB).`;
+    }
+    return null;
+  }
   if (!(UPLOAD_ALLOWED_MIME as readonly string[]).includes(file.type)) {
-    return `${file.name}: unsupported type. Use PNG, JPG, WebP or AVIF.`;
+    return `${file.name}: unsupported type. Use PNG, JPG, WebP, AVIF, or a video (MP4/MOV/WebM).`;
   }
   if (file.size > UPLOAD_MAX_BYTES) {
     return `${file.name}: too large (max ${Math.round(UPLOAD_MAX_BYTES / 1024 / 1024)} MB).`;
@@ -208,26 +172,34 @@ export function ProductMediaManager({
           try {
             const res = await signUpload({ folder });
             if (!res.ok) throw new Error(res.error);
-            const result = await uploadToCloudinary(file, res.data, (pct) =>
-              setTask(id, { progress: pct }),
-            );
+            const resourceType = file.type.startsWith("video/") ? "video" : "image";
+            const result = await uploadToCloudinary(file, {
+              cloudName: res.data.cloudName,
+              signed: res.data,
+              resourceType,
+              onProgress: (pct) => setTask(id, { progress: pct }),
+            });
+            const isVideo = result.resourceType === "video";
             // Append via functional update so concurrent uploads don't clobber.
             onChange((prev) => {
               if (prev.length >= maxImages) return prev;
-              if (result.public_id && prev.some((p) => p.publicId === result.public_id)) {
+              if (result.publicId && prev.some((p) => p.publicId === result.publicId)) {
                 return prev;
               }
               return [
                 ...prev,
                 {
                   key: newKey(),
-                  url: result.secure_url,
+                  url: result.secureUrl,
                   alt: "",
+                  mediaType: isVideo ? "video" : "image",
                   width: result.width,
                   height: result.height,
-                  publicId: result.public_id,
+                  duration: result.duration,
+                  publicId: result.publicId,
                   sizeBytes: result.bytes,
-                  isPrimary: prev.length === 0,
+                  // First IMAGE becomes primary; a video is never the hero shot.
+                  isPrimary: !isVideo && !prev.some((p) => p.isPrimary),
                 },
               ];
             });
@@ -241,14 +213,15 @@ export function ProductMediaManager({
         }),
       );
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [uploadEnabled, maxImages, value.length, activeUploads, folder, onChange],
   );
 
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setDragging(false);
-    const files = Array.from(e.dataTransfer.files).filter((f) => f.type.startsWith("image/"));
+    const files = Array.from(e.dataTransfer.files).filter(
+      (f) => f.type.startsWith("image/") || f.type.startsWith("video/"),
+    );
     void handleFiles(files);
   };
 
@@ -274,7 +247,8 @@ export function ProductMediaManager({
   };
 
   const setPrimary = (key: string) => {
-    onChange(value.map((v) => ({ ...v, isPrimary: v.key === key })));
+    // Videos can never be primary (the hero/LCP is always an image).
+    onChange(value.map((v) => ({ ...v, isPrimary: v.mediaType !== "video" && v.key === key })));
   };
 
   const setAlt = (key: string, alt: string) => {
@@ -291,9 +265,10 @@ export function ProductMediaManager({
 
   const remove = (key: string) => {
     const next = value.filter((v) => v.key !== key);
-    // If we removed the primary, promote the first remaining image.
+    // If we removed the primary, promote the first remaining IMAGE (never a video).
     if (next.length > 0 && !next.some((v) => v.isPrimary)) {
-      next[0] = { ...next[0], isPrimary: true };
+      const firstImage = next.findIndex((v) => v.mediaType !== "video");
+      if (firstImage >= 0) next[firstImage] = { ...next[firstImage], isPrimary: true };
     }
     onChange(next);
   };
@@ -308,7 +283,7 @@ export function ProductMediaManager({
           <div
             role="button"
             tabIndex={0}
-            aria-label="Upload images — drag and drop or click to choose files"
+            aria-label="Upload images or video — drag and drop or click to choose files"
             onClick={() => remaining > 0 && fileInputRef.current?.click()}
             onKeyDown={(e) => {
               if ((e.key === "Enter" || e.key === " ") && remaining > 0) {
@@ -334,23 +309,25 @@ export function ProductMediaManager({
             <p className="text-sm font-medium">
               {remaining > 0 ? (
                 <>
-                  Drag &amp; drop images, or <span className="text-primary">browse</span>
+                  Drag &amp; drop images or video, or <span className="text-primary">browse</span>
                 </>
               ) : (
-                `Image limit reached (${maxImages})`
+                `Upload limit reached (${maxImages})`
               )}
             </p>
             <p className="text-xs text-muted-foreground">
-              PNG, JPG, WebP or AVIF · up to {Math.round(UPLOAD_MAX_BYTES / 1024 / 1024)} MB ·{" "}
+              PNG · JPG · WebP · AVIF · MP4 · MOV · WebM — images ≤{" "}
+              {Math.round(UPLOAD_MAX_BYTES / 1024 / 1024)} MB, video ≤{" "}
+              {Math.round(UPLOAD_VIDEO_MAX_BYTES / 1024 / 1024)} MB ·{" "}
               {Math.max(remaining, 0)} {remaining === 1 ? "slot" : "slots"} left
             </p>
             <input
               ref={fileInputRef}
               type="file"
-              accept={UPLOAD_ACCEPT}
+              accept={`${UPLOAD_ACCEPT},${UPLOAD_VIDEO_ACCEPT}`}
               multiple
               className="sr-only"
-              aria-label="Choose image files to upload"
+              aria-label="Choose image or video files to upload"
               onChange={(e) => {
                 const files = e.target.files ? Array.from(e.target.files) : [];
                 void handleFiles(files);
@@ -475,19 +452,39 @@ export function ProductMediaManager({
                 key={img.key}
                 className="flex gap-3 rounded-xl border border-border bg-background p-2"
               >
-                {/* Thumbnail (plain img: arbitrary external URLs, no next/image domain config). */}
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={img.url}
-                  alt=""
-                  className="size-16 shrink-0 rounded-lg border border-border object-cover"
-                  onError={(e) => {
-                    (e.currentTarget as HTMLImageElement).style.opacity = "0.3";
-                  }}
-                />
+                {/* Thumbnail — a muted <video> (first frame) for clips, else a plain
+                    img (arbitrary external URLs, no next/image domain config). */}
+                {img.mediaType === "video" ? (
+                  <div className="relative size-16 shrink-0">
+                    <video
+                      src={img.url}
+                      muted
+                      playsInline
+                      preload="metadata"
+                      className="size-16 rounded-lg border border-border bg-muted object-cover"
+                    />
+                    <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                      <Play className="size-5 fill-white text-white drop-shadow" aria-hidden />
+                    </span>
+                  </div>
+                ) : (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img
+                    src={img.url}
+                    alt=""
+                    className="size-16 shrink-0 rounded-lg border border-border object-cover"
+                    onError={(e) => {
+                      (e.currentTarget as HTMLImageElement).style.opacity = "0.3";
+                    }}
+                  />
+                )}
                 <div className="flex min-w-0 flex-1 flex-col gap-1.5">
                   <div className="flex items-center gap-2">
-                    {img.isPrimary ? (
+                    {img.mediaType === "video" ? (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                        <Film className="size-3" /> Video
+                      </span>
+                    ) : img.isPrimary ? (
                       <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-xs font-medium text-primary">
                         <Star className="size-3 fill-current" /> Primary
                       </span>
@@ -521,8 +518,8 @@ export function ProductMediaManager({
                     </div>
                   </div>
                   <AdminInput
-                    aria-label={`Alt text for image ${index + 1}`}
-                    placeholder="Describe this image…"
+                    aria-label={`${img.mediaType === "video" ? "Caption for video" : "Alt text for image"} ${index + 1}`}
+                    placeholder={img.mediaType === "video" ? "Describe this video…" : "Describe this image…"}
                     value={img.alt}
                     onChange={(e) => setAlt(img.key, e.target.value)}
                     className="h-9"

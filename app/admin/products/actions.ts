@@ -55,15 +55,19 @@ const NON_STAFF: readonly ("owner" | "admin")[] = ["owner", "admin"];
 
 // ───────────────────────────── shared helpers ─────────────────────────────
 
-/** A media-image draft sent from the client manager — URL paste OR signed upload (FR-13). */
+/** A media draft sent from the client manager — URL paste OR signed upload (FR-13). */
 const productImageInputSchema = z.object({
   /** Existing MediaAsset id when re-using a library asset; else a new asset is made. */
   mediaAssetId: z.string().trim().min(1).optional(),
   url: z.string().trim().url("Enter a valid image URL."),
   alt: z.string().trim().max(300).optional(),
+  /** Media kind. Videos render in the gallery but never become primary/OG/LCP. */
+  mediaType: z.enum(["image", "video"]).default("image"),
   width: z.number().int().positive().optional(),
   height: z.number().int().positive().optional(),
-  /** Cloudinary public id (set for uploaded images) — enables dedup + cleanup. */
+  /** Clip length in whole seconds (videos only) — persisted on the MediaAsset. */
+  duration: z.number().int().positive().optional(),
+  /** Cloudinary public id (set for uploads) — enables dedup + cleanup. */
   publicId: z.string().trim().max(255).optional(),
   sizeBytes: z.number().int().positive().optional(),
   isPrimary: z.boolean().default(false),
@@ -147,10 +151,14 @@ function productScalarData(
 }
 
 /**
- * Reconcile a product's image set inside a transaction (FR-14): create/find a
- * `MediaAsset` per pasted URL, replace the `ProductImage` rows in submitted
- * order (0-based `sortOrder`), and resolve `primaryImageId`. Returns the
+ * Reconcile a product's media set inside a transaction (FR-14): create/find a
+ * `MediaAsset` per pasted URL / upload, replace the `ProductImage` rows in
+ * submitted order (0-based `sortOrder`), and resolve `primaryImageId`. Returns the
  * primaryImageId (a MediaAsset id) to write onto the product, or null.
+ *
+ * CRITICAL: a **video** row is never primary/OG/LCP. The default-primary fallback
+ * lands on the first *image* row (not merely index 0), and an explicit `isPrimary`
+ * flag is honored only for image rows — so the storefront hero is always an image.
  */
 async function reconcileImages(
   tx: Prisma.TransactionClient,
@@ -161,13 +169,17 @@ async function reconcileImages(
   await tx.productImage.deleteMany({ where: { productId } });
 
   let primaryMediaAssetId: string | null = null;
-  const hasExplicitPrimary = images.some((i) => i.isPrimary);
+  // Primary is an image-only concept: ignore any isPrimary flag on a video, and
+  // fall back to the FIRST image row (videos may precede it in sort order).
+  const hasExplicitPrimary = images.some((i) => i.mediaType !== "video" && i.isPrimary);
+  const firstImageIndex = images.findIndex((i) => i.mediaType !== "video");
 
   for (let index = 0; index < images.length; index++) {
     const img = images[index];
+    const isVideo = img.mediaType === "video";
 
     // Reuse an existing asset, or upsert one keyed by publicId (uploads) / URL
-    // (pastes) so the same image submitted twice never spawns duplicate library
+    // (pastes) so the same media submitted twice never spawns duplicate library
     // assets. publicId is the stronger key when present (URLs can carry params).
     let mediaAssetId = img.mediaAssetId ?? null;
     if (!mediaAssetId) {
@@ -182,9 +194,10 @@ async function reconcileImages(
           data: {
             url: img.url,
             alt: img.alt ?? null,
-            type: "image",
+            type: img.mediaType,
             width: img.width ?? null,
             height: img.height ?? null,
+            duration: img.duration ?? null,
             sizeBytes: img.sizeBytes ?? null,
             publicId: img.publicId ?? null,
             folder: "products",
@@ -195,8 +208,9 @@ async function reconcileImages(
       }
     }
 
-    // First image is primary by default when none is explicitly flagged.
-    const isPrimary = hasExplicitPrimary ? img.isPrimary : index === 0;
+    // Primary defaults to the first IMAGE row when none is explicitly flagged;
+    // videos are categorically excluded.
+    const isPrimary = !isVideo && (hasExplicitPrimary ? img.isPrimary : index === firstImageIndex);
     if (isPrimary) primaryMediaAssetId = mediaAssetId;
 
     await tx.productImage.create({
@@ -205,6 +219,7 @@ async function reconcileImages(
         mediaAssetId,
         url: img.url,
         alt: img.alt ?? null,
+        type: img.mediaType,
         width: img.width ?? null,
         height: img.height ?? null,
         sortOrder: index,
@@ -685,6 +700,7 @@ export async function duplicateProduct(
           mediaAssetId: true,
           url: true,
           alt: true,
+          type: true,
           width: true,
           height: true,
           sortOrder: true,
@@ -745,13 +761,17 @@ export async function duplicateProduct(
 
       let primaryMediaAssetId: string | null = null;
       for (const img of source.images) {
-        if (img.isPrimary && img.mediaAssetId) primaryMediaAssetId = img.mediaAssetId;
+        // Primary stays image-only (videos are never the hero — see reconcileImages).
+        if (img.isPrimary && img.type !== "video" && img.mediaAssetId) {
+          primaryMediaAssetId = img.mediaAssetId;
+        }
         await tx.productImage.create({
           data: {
             productId: created.id,
             mediaAssetId: img.mediaAssetId, // shared asset by reference
             url: img.url,
             alt: img.alt,
+            type: img.type,
             width: img.width,
             height: img.height,
             sortOrder: img.sortOrder,

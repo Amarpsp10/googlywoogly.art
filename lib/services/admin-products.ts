@@ -198,6 +198,7 @@ const adminProductDetailSelect = {
       mediaAssetId: true,
       url: true,
       alt: true,
+      type: true,
       width: true,
       height: true,
       sortOrder: true,
