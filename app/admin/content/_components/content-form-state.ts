@@ -16,6 +16,12 @@ export interface ContentFormState {
   viewLive?: string;
   /** Bumped each submit so client effects (toast/close) fire even on repeats. */
   ts?: number;
+  /**
+   * Id of a row the action just created (e.g. the `MediaAsset` minted by `addMedia`).
+   * Lets a client picker wire the fresh row into its form without a round-trip.
+   * Only set on a successful create.
+   */
+  createdId?: string;
 }
 
 export const EMPTY_FORM_STATE: ContentFormState = {};

@@ -21,6 +21,7 @@ const EMPTY: CategoryFormValues = {
   slug: "",
   description: "",
   imageId: "",
+  imageUrl: "",
   parentId: "",
   sortOrder: 0,
   isActive: true,

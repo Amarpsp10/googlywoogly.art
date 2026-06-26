@@ -66,13 +66,17 @@ export function Categories({ categories }: { categories: CategoryListItem[] }) {
 
                   {/* Content */}
                   <div className="absolute inset-0 flex flex-col items-center justify-end p-4 md:p-6 text-center">
-                    <motion.div
-                      whileHover={{ rotate: [0, -10, 10, 0], scale: 1.1 }}
-                      transition={{ duration: 0.5 }}
-                      className={`w-12 h-12 md:w-14 md:h-14 mb-3 bg-gradient-to-br ${color} rounded-xl flex items-center justify-center shadow-lg`}
-                    >
-                      <Icon className="w-6 h-6 md:w-7 md:h-7 text-foreground" />
-                    </motion.div>
+                    {/* Decorative icon badge (design, not data) — only over the
+                        gradient fallback; a real photo stands on its own. */}
+                    {!category.image && (
+                      <motion.div
+                        whileHover={{ rotate: [0, -10, 10, 0], scale: 1.1 }}
+                        transition={{ duration: 0.5 }}
+                        className={`w-12 h-12 md:w-14 md:h-14 mb-3 bg-gradient-to-br ${color} rounded-xl flex items-center justify-center shadow-lg`}
+                      >
+                        <Icon className="w-6 h-6 md:w-7 md:h-7 text-foreground" />
+                      </motion.div>
+                    )}
 
                     <h3 className="font-bold text-background mb-1 text-sm md:text-base">
                       {category.name}

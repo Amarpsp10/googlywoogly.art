@@ -13,6 +13,7 @@ import {
 } from "@/components/admin/form-field";
 import { SubmitButton } from "@/components/admin/submit-button";
 import { Panel } from "@/components/admin/panel";
+import { SingleImagePicker } from "@/components/admin/single-image-picker";
 import { slugify } from "@/lib/slug";
 import { cn } from "@/lib/utils";
 import { upsertCategory } from "./actions";
@@ -34,6 +35,8 @@ export interface CategoryFormValues {
   slug: string;
   description: string;
   imageId: string;
+  /** Current image URL for the picker preview ("" when none is set). */
+  imageUrl: string;
   parentId: string;
   sortOrder: number;
   isActive: boolean;
@@ -247,8 +250,17 @@ export function CategoryForm({
         </div>
       </Panel>
 
-      {/* Hidden image id — wired to <MediaPicker> by the media agent later. */}
-      <input type="hidden" name="imageId" defaultValue={initial.imageId} />
+      <Panel
+        title="Image"
+        description="Used as this category's tile on the storefront. A clear, square-ish photo works best."
+      >
+        <SingleImagePicker
+          name="imageId"
+          defaultImageId={initial.imageId || null}
+          defaultImageUrl={initial.imageUrl || null}
+          label="Category image"
+        />
+      </Panel>
 
       <div
         className={cn(

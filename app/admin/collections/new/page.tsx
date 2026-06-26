@@ -21,6 +21,7 @@ const EMPTY: CollectionFormValues = {
   slug: "",
   description: "",
   heroImageId: "",
+  heroImageUrl: "",
   type: CollectionType.manual,
   rules: { match: "all", conditions: [] },
   sortOrder: 0,

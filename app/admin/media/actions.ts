@@ -31,6 +31,8 @@ const addMediaSchema = z.object({
   type: z.nativeEnum(MediaType).default(MediaType.image),
   width: z.number().int().min(0).optional(),
   height: z.number().int().min(0).optional(),
+  /** Cloudinary public id (signed uploads only) — enables dedup + binary cleanup. */
+  publicId: z.string().trim().max(255).optional(),
   folder: z.string().trim().max(80).optional(),
 });
 
@@ -93,6 +95,7 @@ export async function addMedia(
     type: typeRaw && typeRaw in MediaType ? typeRaw : undefined,
     width: intField(formData, "width"),
     height: intField(formData, "height"),
+    publicId: optionalField(formData, "publicId"),
     folder: optionalField(formData, "folder"),
   });
   if (!parsed.success) {
@@ -101,7 +104,7 @@ export async function addMedia(
   const input = parsed.data;
 
   try {
-    await prisma.$transaction(async (tx) => {
+    const created = await prisma.$transaction(async (tx) => {
       const after = await tx.mediaAsset.create({
         data: {
           url: input.url,
@@ -109,6 +112,7 @@ export async function addMedia(
           type: input.type,
           width: input.width ?? null,
           height: input.height ?? null,
+          publicId: input.publicId ?? null,
           folder: input.folder ?? null,
         },
         select: auditSelect,
@@ -117,8 +121,10 @@ export async function addMedia(
         { adminId: admin.id, action: "media_asset.create", entityType: "MediaAsset", entityId: after.id, after },
         tx,
       );
+      return after;
     });
-    return formOk("Media added to your library.");
+    // `createdId` lets the single-image picker bind the new asset into its form.
+    return { ...formOk("Media added to your library."), createdId: created.id };
   } catch (err) {
     console.error("[media] add failed", err);
     return formFail("Couldn't add that media. Please try again.");

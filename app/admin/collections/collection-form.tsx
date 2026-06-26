@@ -14,6 +14,7 @@ import {
 } from "@/components/admin/form-field";
 import { Panel } from "@/components/admin/panel";
 import { SubmitButton } from "@/components/admin/submit-button";
+import { SingleImagePicker } from "@/components/admin/single-image-picker";
 import { slugify } from "@/lib/slug";
 import { cn } from "@/lib/utils";
 import { upsertCollection } from "./actions";
@@ -34,6 +35,8 @@ export interface CollectionFormValues {
   slug: string;
   description: string;
   heroImageId: string;
+  /** Current hero image URL for the picker preview ("" when none is set). */
+  heroImageUrl: string;
   type: CollectionType;
   rules: CollectionRules;
   sortOrder: number;
@@ -263,8 +266,17 @@ export function CollectionForm({ initial }: { initial: CollectionFormValues }) {
         </div>
       </Panel>
 
-      {/* Hidden hero image id — wired to <MediaPicker> by the media agent later. */}
-      <input type="hidden" name="heroImageId" defaultValue={initial.heroImageId} />
+      <Panel
+        title="Hero image"
+        description="Shown at the top of the collection page and on its homepage tile when featured."
+      >
+        <SingleImagePicker
+          name="heroImageId"
+          defaultImageId={initial.heroImageId || null}
+          defaultImageUrl={initial.heroImageUrl || null}
+          label="Collection hero image"
+        />
+      </Panel>
 
       <div
         className={cn(
