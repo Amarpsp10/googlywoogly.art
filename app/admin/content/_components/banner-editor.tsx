@@ -10,8 +10,9 @@ import { upsertBanner } from "../_actions/banners";
 import { useEditorSheetClose } from "./editor-sheet";
 
 /**
- * `BannerEditorForm` — the banner editor (doc 15 §4.3). Type (marquee/hero/promo),
- * text, link, optional image id, IST schedule window, sort order, active switch.
+ * `BannerEditorForm` — the banner editor (doc 15 §4.3). Type (the picker offers
+ * only marquee — the sole type the storefront renders), text, link, optional image
+ * id, IST schedule window, sort order, active switch.
  * Posts to `upsertBanner`; the server validates `startsAt ≤ endsAt` and requires
  * marquee text. Times are entered in IST via `datetime-local`.
  */
@@ -56,6 +57,16 @@ function Field({
   );
 }
 
+/**
+ * Banner types offered for *new* banners. Only `marquee` is consumed by the
+ * storefront (`getActiveBanners("marquee")` → the home-page scrolling strip);
+ * `hero`/`promo` exist in the Prisma `BannerType` enum but have no renderer, so
+ * offering them would let admins create banners that never appear anywhere. We
+ * limit the UI only (no enum/migration change) — existing `hero`/`promo` rows
+ * still open for editing via the locked-type hidden input below.
+ */
+const SELECTABLE_BANNER_TYPES: BannerType[] = [BannerType.marquee];
+
 export function BannerEditorForm({
   data,
   lockedType,
@@ -77,7 +88,7 @@ export function BannerEditorForm({
       ) : (
         <FormField label="Type" error={typeError} required>
           <AdminSelect name="type" defaultValue={type}>
-            {Object.values(BannerType).map((t) => (
+            {SELECTABLE_BANNER_TYPES.map((t) => (
               <option key={t} value={t}>
                 {BANNER_TYPE_META[t].label}
               </option>

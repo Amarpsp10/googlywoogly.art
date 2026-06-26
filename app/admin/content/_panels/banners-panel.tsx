@@ -20,7 +20,8 @@ import { toggleBanner, deleteBanner, duplicateBanner } from "../_actions/banners
 
 /**
  * Banners tab (doc 15 §4.3). Grouped by type with computed status chips
- * (Live/Scheduled/Expired/Off) and a precedence hint for the marquee fallback.
+ * (Live/Scheduled/Expired/Off) and a hint about the home-page marquee's default
+ * strip when none is live.
  */
 export async function BannersPanel() {
   const banners = await prisma.banner.findMany({
@@ -39,11 +40,15 @@ export async function BannersPanel() {
   });
 
   const now = new Date();
-  const groups: { type: BannerType; rows: typeof banners }[] = [
-    { type: BannerType.marquee, rows: banners.filter((b) => b.type === BannerType.marquee) },
-    { type: BannerType.hero, rows: banners.filter((b) => b.type === BannerType.hero) },
-    { type: BannerType.promo, rows: banners.filter((b) => b.type === BannerType.promo) },
-  ];
+  // Only `marquee` has a storefront renderer (getActiveBanners("marquee")); hero
+  // and promo are legacy enum values that nothing displays. So offer "New" for
+  // marquee only, and surface a hero/promo group ONLY while legacy rows still
+  // exist (so they stay editable/deletable) — never to create more.
+  const groups: { type: BannerType; rows: typeof banners; allowNew: boolean }[] = [
+    { type: BannerType.marquee, rows: banners.filter((b) => b.type === BannerType.marquee), allowNew: true },
+    { type: BannerType.hero, rows: banners.filter((b) => b.type === BannerType.hero), allowNew: false },
+    { type: BannerType.promo, rows: banners.filter((b) => b.type === BannerType.promo), allowNew: false },
+  ].filter((g) => g.allowNew || g.rows.length > 0);
 
   const anyMarqueeLive = banners.some(
     (b) => b.type === BannerType.marquee && bannerStatus(b, now) === "live",
@@ -57,13 +62,15 @@ export async function BannersPanel() {
           title={BANNER_TYPE_META[group.type].label}
           description={BANNER_TYPE_META[group.type].description}
           action={
-            <EditorSheet
-              title={`New ${BANNER_TYPE_META[group.type].label.toLowerCase()}`}
-              triggerLabel="New"
-              triggerIcon="add"
-            >
-              <BannerEditorForm lockedType={group.type} />
-            </EditorSheet>
+            group.allowNew ? (
+              <EditorSheet
+                title={`New ${BANNER_TYPE_META[group.type].label.toLowerCase()}`}
+                triggerLabel="New"
+                triggerIcon="add"
+              >
+                <BannerEditorForm lockedType={group.type} />
+              </EditorSheet>
+            ) : undefined
           }
         >
           {group.rows.length === 0 ? (
@@ -145,8 +152,9 @@ export async function BannersPanel() {
 
           {group.type === BannerType.marquee && !anyMarqueeLive ? (
             <p className="mt-3 rounded-xl bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
-              No marquee is live, so the header shows your Announcement Bar text from
-              Settings.
+              No marquee is live, so the home-page scrolling strip shows its default
+              items. The thin Announcement Bar at the top of your store pages is
+              managed separately in Settings.
             </p>
           ) : null}
         </Panel>

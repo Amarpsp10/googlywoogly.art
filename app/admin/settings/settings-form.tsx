@@ -146,7 +146,7 @@ export function SettingsForm({ data }: { data: SettingsFormData }) {
         </Panel>
 
         {/* Announcement Bar */}
-        <Panel title="Announcement Bar" description="Shown in the header when no marquee banner is live.">
+        <Panel title="Announcement Bar" description="A thin strip shown at the top of your store pages. (The home page's scrolling marquee is separate — manage it under Content → Banners.)">
           <div className="space-y-4">
             <SwitchField name="announcementEnabled" label="Enabled" defaultChecked={data.announcement.enabled} />
             <Field name="announcementText" label="Text" defaultValue={data.announcement.text} placeholder="Free shipping over ₹1500 ✦ Handmade in Jaipur" />
