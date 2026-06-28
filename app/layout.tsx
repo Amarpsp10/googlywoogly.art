@@ -42,6 +42,7 @@ export const metadata: Metadata = {
   },
   twitter: { card: "summary_large_image", images: ["/og-image.jpg"] },
   robots: { index: true, follow: true },
+  manifest: "/site.webmanifest",
 };
 
 export const viewport: Viewport = {
