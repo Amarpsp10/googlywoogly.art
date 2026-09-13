@@ -6,6 +6,7 @@ import { prisma } from "@/lib/db";
 import { requireRole } from "@/lib/auth";
 import { NON_STAFF_ROLES } from "@/lib/auth/types";
 import { writeAudit } from "@/lib/admin/audit";
+import { siteSettingsFieldErrors } from "@/lib/admin/form-field-errors";
 import { revalidateSettings, revalidateHome } from "@/lib/revalidate";
 import { siteSettingsInputSchema } from "@/lib/validations/content";
 import {
@@ -127,7 +128,10 @@ export async function updateSiteSettings(
 
   const parsed = siteSettingsInputSchema.safeParse(candidate);
   if (!parsed.success) {
-    return formValidationFail(parsed.error.flatten().fieldErrors);
+    // Map nested schema issues (e.g. `defaultSeo.twitterHandle`) onto the flat
+    // input names the form renders, so the offending field is actually
+    // highlighted instead of a generic, un-actionable banner.
+    return formValidationFail(siteSettingsFieldErrors(parsed.error));
   }
   const input = parsed.data;
 
